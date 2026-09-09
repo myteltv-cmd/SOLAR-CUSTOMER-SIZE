@@ -53,10 +53,13 @@ export interface SolarCalculationResult {
   
   // Financial Savings & Investment Breakdown
   monthlyBillBeforeSolarUSD: number; // Original monthly bill in USD
-  estimatedMonthlySavingsUSD: number; // Monthly bill savings in USD (100% offset)
+  estimatedMonthlySavingsUSD: number; // Monthly bill savings in USD
   estimatedAnnualSavingsUSD: number; // Annual savings in USD
-  estimatedMonthlyBillAfterSolarUSD: number; // Remaining bill ($0 or nominal grid fee)
-  estimatedBillReductionPercent: number; // 100% bill reduction
+  estimatedMonthlyBillAfterSolarUSD: number; // Remaining bill ($0 or night load)
+  estimatedBillReductionPercent: number; // 50-70% for on-grid, 100% for hybrid
+  daytimeLoadPercent?: number; // 50% - 70% daytime load
+  nighttimeLoadPercent?: number; // 30% - 50% nighttime load
+  paybackYearsDisplay?: string; // "3 – 5 Năm"
   
   // Investment & Return on Investment (ROI)
   solarCapexUSD: number; // Solar PV turnkey cost ($690/kWp)

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Language, SolarEngineConfig, SolarCalculationResult, CalculatorInputs } from '../types';
 import { translations } from '../i18n/translations';
 import { calculateSolarSystem } from '../utils/calculator';
+import { triggerHaptic } from '../utils/haptics';
 import {
   FileUp,
   FileText,
@@ -31,6 +32,7 @@ interface ParsedBill {
   monthlyBillUSD: number;
   tariffRateUSD: number;
   peakDemandKVA: number;
+  recommendedKWp: number;
   propertyType: 'factory' | 'hotel' | 'home' | 'shop';
   confidence: number;
   fileName: string;
@@ -49,16 +51,17 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
   const [parsedBill, setParsedBill] = useState<ParsedBill | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
 
-  // Pre-configured realistic EDC Cambodia sample bills
+  // Pre-configured realistic EDC Cambodia sample bills with accurate $0.182/kWh tariff
   const sampleBills: Record<string, ParsedBill> = {
     factory: {
       customerName: 'Cambodia Garment & Textile Manufacturing Co.',
       meterId: 'EDC-PP-8849201',
       billingPeriod: 'July 2026',
       monthlyKWh: 20450,
-      monthlyBillUSD: 3450,
-      tariffRateUSD: 0.168,
+      monthlyBillUSD: 3722,
+      tariffRateUSD: 0.182,
       peakDemandKVA: 160,
+      recommendedKWp: 151.5,
       propertyType: 'factory',
       confidence: 98,
       fileName: 'EDC_Industrial_Tariff_Bill_Sample.pdf'
@@ -68,9 +71,10 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
       meterId: 'EDC-PP-5192834',
       billingPeriod: 'July 2026',
       monthlyKWh: 10600,
-      monthlyBillUSD: 1850,
-      tariffRateUSD: 0.174,
+      monthlyBillUSD: 1929,
+      tariffRateUSD: 0.182,
       peakDemandKVA: 85,
+      recommendedKWp: 78.5,
       propertyType: 'hotel',
       confidence: 96,
       fileName: 'EDC_Commercial_Hotel_Bill_Sample.jpg'
@@ -80,9 +84,10 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
       meterId: 'EDC-KD-1049281',
       billingPeriod: 'July 2026',
       monthlyKWh: 1780,
-      monthlyBillUSD: 320,
-      tariffRateUSD: 0.180,
+      monthlyBillUSD: 324,
+      tariffRateUSD: 0.182,
       peakDemandKVA: 15,
+      recommendedKWp: 13.2,
       propertyType: 'home',
       confidence: 95,
       fileName: 'EDC_Residential_Villa_Bill_Sample.png'
@@ -110,15 +115,17 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
   };
 
   const handleFileUpload = (file: File) => {
-    // Generate simulated parsing based on file name or fallback to high-tier profile
+    // Generate simulated parsing based on file name or fallback to high-tier profile with $0.182/kWh
+    const monthlyKWh = 7850;
     const billData: ParsedBill = {
       customerName: 'Verified Utility Customer (EDC Cambodia)',
       meterId: `EDC-${Math.floor(1000000 + Math.random() * 9000000)}`,
       billingPeriod: 'Recent Billing Statement',
-      monthlyKWh: 7850,
-      monthlyBillUSD: 1350,
-      tariffRateUSD: 0.172,
+      monthlyKWh: monthlyKWh,
+      monthlyBillUSD: Math.round(monthlyKWh * 0.182),
+      tariffRateUSD: 0.182,
       peakDemandKVA: 65,
+      recommendedKWp: Math.round(((monthlyKWh / 30) / 4.5) * 10) / 10,
       propertyType: 'shop',
       confidence: 94,
       fileName: file.name
@@ -184,10 +191,10 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-all cursor-pointer ${
+            className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-all duration-150 ease-out active:scale-[0.99] touch-manipulation cursor-pointer ${
               isDragging
                 ? 'border-[#E03E2D] bg-[#EFECE6]/50'
-                : 'border-[#1A1A1A]/15 hover:border-[#E03E2D]/50 bg-[#F7F5F2]'
+                : 'border-[#1A1A1A]/15 hover:border-[#E03E2D]/50 active:bg-[#F1EFEA] bg-[#F7F5F2]'
             }`}
           >
             <input
@@ -223,8 +230,11 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 id="sample-bill-factory-btn"
-                onClick={() => simulateOcrScan(sampleBills.factory)}
-                className="flex items-center justify-between p-3 bg-[#F7F5F2] rounded-xl border border-[#1A1A1A]/10 hover:border-[#E03E2D] hover:shadow-2xs transition-all text-left cursor-pointer"
+                onClick={() => {
+                  triggerHaptic('selection');
+                  simulateOcrScan(sampleBills.factory);
+                }}
+                className="flex items-center justify-between p-3 bg-[#F7F5F2] rounded-xl border border-[#1A1A1A]/10 hover:border-[#E03E2D] active:border-[#E03E2D] active:scale-95 transition-all duration-150 ease-out text-left cursor-pointer touch-manipulation select-none"
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#E03E2D]" />
@@ -239,8 +249,11 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
 
               <button
                 id="sample-bill-hotel-btn"
-                onClick={() => simulateOcrScan(sampleBills.hotel)}
-                className="flex items-center justify-between p-3 bg-[#F7F5F2] rounded-xl border border-[#1A1A1A]/10 hover:border-[#E03E2D] hover:shadow-2xs transition-all text-left cursor-pointer"
+                onClick={() => {
+                  triggerHaptic('selection');
+                  simulateOcrScan(sampleBills.hotel);
+                }}
+                className="flex items-center justify-between p-3 bg-[#F7F5F2] rounded-xl border border-[#1A1A1A]/10 hover:border-[#E03E2D] active:border-[#E03E2D] active:scale-95 transition-all duration-150 ease-out text-left cursor-pointer touch-manipulation select-none"
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#1A1A1A]" />
@@ -255,8 +268,11 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
 
               <button
                 id="sample-bill-home-btn"
-                onClick={() => simulateOcrScan(sampleBills.home)}
-                className="flex items-center justify-between p-3 bg-[#F7F5F2] rounded-xl border border-[#1A1A1A]/10 hover:border-[#E03E2D] hover:shadow-2xs transition-all text-left cursor-pointer"
+                onClick={() => {
+                  triggerHaptic('selection');
+                  simulateOcrScan(sampleBills.home);
+                }}
+                className="flex items-center justify-between p-3 bg-[#F7F5F2] rounded-xl border border-[#1A1A1A]/10 hover:border-[#E03E2D] active:border-[#E03E2D] active:scale-95 transition-all duration-150 ease-out text-left cursor-pointer touch-manipulation select-none"
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#1E7B58]" />
@@ -309,8 +325,12 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
                 </div>
 
                 <button
-                  onClick={() => setParsedBill(null)}
-                  className="text-[#1A1A1A]/40 hover:text-[#1A1A1A] p-1 cursor-pointer"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setParsedBill(null);
+                  }}
+                  className="text-[#1A1A1A]/40 hover:text-[#1A1A1A] p-1.5 rounded-lg active:scale-90 transition-all duration-150 ease-out cursor-pointer touch-manipulation"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -338,19 +358,25 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
 
                 <div className="bg-white p-3 rounded-xl border border-[#1A1A1A]/10">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-[#1A1A1A]/50 font-mono block">
-                    {t.billUpload.tariffRate}
+                    {currentLang === 'VI' ? 'Đơn giá điện bình quân' : t.billUpload.tariffRate}
                   </span>
                   <span className="text-sm font-bold text-[#1E7B58] font-mono">
                     ${parsedBill.tariffRateUSD.toFixed(3)} / kWh
+                  </span>
+                  <span className="text-[10px] text-[#1E7B58]/80 block font-mono">
+                    EDC Tariff
                   </span>
                 </div>
 
                 <div className="bg-white p-3 rounded-xl border border-[#1A1A1A]/10">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-[#1A1A1A]/50 font-mono block">
-                    {t.billUpload.peakDemand}
+                    {currentLang === 'VI' ? 'Công suất Solar đề xuất' : 'Recommended Solar Size'}
                   </span>
-                  <span className="text-sm font-bold text-[#C27803] font-mono">
-                    {parsedBill.peakDemandKVA} kVA
+                  <span className="text-sm font-bold text-[#ED1C24] font-mono">
+                    {parsedBill.recommendedKWp} kWp
+                  </span>
+                  <span className="text-[10px] text-[#64748B] block font-mono">
+                    (Tính theo kWp, không kVA)
                   </span>
                 </div>
               </div>
@@ -362,9 +388,13 @@ export const BillUploadSection: React.FC<BillUploadSectionProps> = ({
                 </div>
 
                 <button
+                  type="button"
                   id="apply-bill-to-proposal-btn"
-                  onClick={handleApplyToProposal}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-[#E03E2D] hover:bg-[#C92F20] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs cursor-pointer transition-all"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    handleApplyToProposal();
+                  }}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-[#E03E2D] hover:bg-[#C92F20] active:bg-[#B8151B] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs active:shadow-none cursor-pointer transition-all duration-150 ease-out active:scale-95 active:translate-y-0.5 touch-manipulation select-none"
                 >
                   <span>{t.billUpload.generateProposalFromBill}</span>
                   <ArrowRight className="w-4 h-4" />

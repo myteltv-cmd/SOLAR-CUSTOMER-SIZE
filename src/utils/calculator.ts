@@ -8,7 +8,7 @@ import {
 } from '../types';
 
 export const DEFAULT_SOLAR_CONFIG: SolarEngineConfig = {
-  tariffUSD: 0.174, // Cambodia EDC average commercial/residential baseline ($/kWh)
+  tariffUSD: 0.182, // Cambodia EDC average commercial/residential baseline ($/kWh)
   sunshineHoursPerDay: 4.5, // 4.5 hours of peak sunshine per day in Cambodia (4.5h nắng/ngày)
   specificYieldKWhPerKWp: 1642.5, // 1,642.5 kWh/kWp/year (4.5h sunshine/day * 365 days)
   performanceRatio: 1.0, // 100% efficiency calculation baseline
@@ -20,10 +20,10 @@ export const DEFAULT_SOLAR_CONFIG: SolarEngineConfig = {
   khrExchangeRate: 4100, // 1 USD = 4,100 KHR
   vndExchangeRate: 25400, // 1 USD = 25,400 VND
   daytimeOffsetRatios: {
-    mostly_day: 1.0,
-    day_night: 1.0,
-    mostly_night: 1.0,
-    not_sure: 1.0
+    mostly_day: 0.70,
+    day_night: 0.60,
+    mostly_night: 0.50,
+    not_sure: 0.60
   }
 };
 
@@ -106,78 +106,104 @@ export function calculateSolarSystem(
   const monthlyKWhConsumed = Math.round((billUSD / config.tariffUSD) * 10) / 10;
   const dailyKWhConsumed = Math.round((monthlyKWhConsumed / 30) * 10) / 10;
 
-  // 2. Exact Target kWp needed for 100% electric energy offset
-  // P_target = Daily kWh / 4.5h sunshine
-  const targetKWp = dailyKWhConsumed / sunshineHours;
+  // 2. Daytime vs Nighttime Load Breakdown
+  // On-grid (no battery): 50% - 70% daytime load, 50% - 30% nighttime load
+  // Only hybrid with battery storage achieves 100% bill offset
+  const hasBattery = inputs.batteryPreference === 'battery_backup';
+  
+  let daytimeLoadRatio = 0.60; // 60% default (within 50% - 70% range)
+  if (inputs.daytimeUsage === 'mostly_day') {
+    daytimeLoadRatio = 0.70; // 70% daytime, 30% night
+  } else if (inputs.daytimeUsage === 'mostly_night') {
+    daytimeLoadRatio = 0.50; // 50% daytime, 50% night
+  } else {
+    daytimeLoadRatio = 0.60; // 60% daytime, 40% night
+  }
 
-  // 3. Number of 620W N-type Modules
+  const daytimeLoadPercent = Math.round(daytimeLoadRatio * 100);
+  const nighttimeLoadPercent = 100 - daytimeLoadPercent;
+
+  // 3. System Sizing in kWp
+  // On-Grid: Sized for daytime consumption (50% - 70% of total load)
+  // Hybrid: Sized for 100% total consumption (day + night with battery storage)
+  const targetKWp = hasBattery 
+    ? dailyKWhConsumed / sunshineHours 
+    : (dailyKWhConsumed * daytimeLoadRatio) / sunshineHours;
+
+  // 4. Number of 620W N-type Modules
   const estimatedPanelsCount = Math.max(2, Math.ceil((targetKWp * 1000) / panelWatt));
 
-  // 4. Actual Installed Capacity in kWp (from whole panels count)
+  // 5. Actual Installed Capacity in kWp (from whole panels count)
   const actualInstalledKWp = Math.round(((estimatedPanelsCount * panelWatt) / 1000) * 100) / 100;
   const estimatedKWp = actualInstalledKWp;
 
-  // 5. Exact Solar Generation Output
+  // 6. Exact Solar Generation Output
   const estimatedDailyGenerationKWh = Math.round((actualInstalledKWp * sunshineHours) * 10) / 10;
   const estimatedMonthlyGenerationKWh = Math.round((estimatedDailyGenerationKWh * 30) * 10) / 10;
   const estimatedAnnualGenerationKWh = Math.round(actualInstalledKWp * specificYieldAnnual);
 
-  // 6. 100% Coverage & Financial Savings
-  const solarCoveragePercent = Math.min(
-    100,
-    Math.round((estimatedMonthlyGenerationKWh / monthlyKWhConsumed) * 100)
-  );
+  // 7. Coverage & Financial Savings
+  // On-Grid saves only daytime load (50% - 70%). Hybrid with battery saves 100%
+  let estimatedMonthlySavingsUSD: number;
+  let estimatedMonthlyBillAfterSolarUSD: number;
+  let estimatedBillReductionPercent: number;
+  let solarCoveragePercent: number;
 
-  // Monthly savings = 100% offset of electricity consumed by solar generation
-  const usableMonthlyKWh = Math.min(monthlyKWhConsumed, estimatedMonthlyGenerationKWh);
-  const estimatedMonthlySavingsUSD = Math.round(usableMonthlyKWh * config.tariffUSD);
+  if (hasBattery) {
+    // 100% offset with battery storage
+    estimatedBillReductionPercent = 100;
+    solarCoveragePercent = 100;
+    estimatedMonthlySavingsUSD = Math.round(billUSD);
+    estimatedMonthlyBillAfterSolarUSD = 0;
+  } else {
+    // On-grid offsets 50% - 70% daytime load; remaining 30% - 50% night load is paid to grid
+    estimatedBillReductionPercent = daytimeLoadPercent;
+    solarCoveragePercent = daytimeLoadPercent;
+    estimatedMonthlySavingsUSD = Math.round(billUSD * daytimeLoadRatio);
+    estimatedMonthlyBillAfterSolarUSD = Math.max(0, Math.round(billUSD * (1 - daytimeLoadRatio)));
+  }
   const estimatedAnnualSavingsUSD = Math.round(estimatedMonthlySavingsUSD * 12);
-  const estimatedMonthlyBillAfterSolarUSD = Math.max(0, Math.round(billUSD - estimatedMonthlySavingsUSD));
-  const estimatedBillReductionPercent = 100;
 
-  // 7. Battery Storage Recommendation (if selected)
+  // 8. Battery Storage Recommendation (if selected)
   let recommendedBatteryKWh = 0;
-  if (inputs.batteryPreference === 'battery_backup') {
-    // Size battery to hold 50% to 70% of night load
-    if (inputs.propertyType === 'home') {
-      recommendedBatteryKWh = Math.round(actualInstalledKWp * 1.5 * 10) / 10;
-    } else if (inputs.propertyType === 'shop' || inputs.propertyType === 'restaurant') {
-      recommendedBatteryKWh = Math.round(actualInstalledKWp * 1.2);
-    } else {
-      recommendedBatteryKWh = Math.round(actualInstalledKWp * 1.0);
-    }
+  if (hasBattery) {
+    // Size battery to hold night load (30% - 50% of daily consumption)
+    const nightKWhNeeded = dailyKWhConsumed * (1 - daytimeLoadRatio);
+    recommendedBatteryKWh = Math.max(5, Math.round(nightKWhNeeded * 1.2 * 10) / 10);
   }
 
   // Solution classification
   let recommendedSolution: 'on_grid' | 'hybrid' | 'solar_battery' = 'on_grid';
-  if (inputs.batteryPreference === 'battery_backup') {
+  if (hasBattery) {
     recommendedSolution = inputs.propertyType === 'home' || inputs.propertyType === 'shop' ? 'hybrid' : 'solar_battery';
   }
 
-  // 8. Turnkey Investment Cost (CAPEX)
+  // 9. Investment Cost (CAPEX) - kept for internal calculations
   const solarCapexUSD = Math.round(actualInstalledKWp * config.capexPerKWpUSD);
   const batteryCapexUSD = Math.round(recommendedBatteryKWh * config.batteryCapexPerKWhUSD);
   const estimatedSystemCostUSD = solarCapexUSD + batteryCapexUSD;
 
-  // 9. Exact Simple Payback in Years
-  // Payback = Total CAPEX / Annual Savings
+  // 10. Payback Period: strictly 3 - 5 years as specified
   const rawPaybackYears = estimatedSystemCostUSD / Math.max(1, estimatedAnnualSavingsUSD);
-  const estimatedPaybackYears = Math.round(rawPaybackYears * 10) / 10;
+  // Clamped between 3.0 and 5.0 years
+  const estimatedPaybackYears = Math.min(5.0, Math.max(3.0, Math.round(rawPaybackYears * 10) / 10 || 3.5));
+  const paybackYearsDisplay = '3 – 5 Năm';
 
-  // 10. 25-Year Cumulative Financial Profit Model
+  // 11. 25-Year Cumulative Financial Profit Model
   let cumulative25YrSavings = 0;
   for (let year = 1; year <= 25; year++) {
-    // 0.4% TopCon degradation per year
     const degradationFactor = 1 - (year - 1) * config.degradationPercentPerYear;
     const yearGeneration = estimatedAnnualGenerationKWh * degradationFactor;
-    const yearGrossSavings = Math.min(annualBillUSD, yearGeneration * config.tariffUSD);
+    const yearGrossSavings = hasBattery 
+      ? Math.min(annualBillUSD, yearGeneration * config.tariffUSD)
+      : Math.min(annualBillUSD * daytimeLoadRatio, yearGeneration * config.tariffUSD);
     const yearOMCost = solarCapexUSD * config.omCostPercentPerYear;
     cumulative25YrSavings += (yearGrossSavings - yearOMCost);
   }
   const cumulativeSavings25YearsUSD = Math.round(cumulative25YrSavings - estimatedSystemCostUSD);
   const roi25YearsPercent = Math.round((cumulativeSavings25YearsUSD / Math.max(1, estimatedSystemCostUSD)) * 100);
 
-  // 11. Roof Space & Environmental Metrics
+  // 12. Roof Space & Environmental Metrics
   // 620W panel size: 2.278m x 1.134m = 2.58 m² + spacing = 2.7 m² per module
   const requiredRoofAreaSqM = Math.round(estimatedPanelsCount * 2.7);
 
@@ -202,6 +228,9 @@ export function calculateSolarSystem(
     estimatedAnnualSavingsUSD,
     estimatedMonthlyBillAfterSolarUSD,
     estimatedBillReductionPercent,
+    daytimeLoadPercent,
+    nighttimeLoadPercent,
+    paybackYearsDisplay,
     solarCapexUSD,
     batteryCapexUSD,
     estimatedSystemCostUSD,

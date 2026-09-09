@@ -15,6 +15,7 @@ import { WhyMetfoneSection } from './components/WhyMetfoneSection';
 import { CustomerUseCasesSection } from './components/CustomerUseCasesSection';
 import { FaqSection } from './components/FaqSection';
 import { FinalCtaSection } from './components/FinalCtaSection';
+import { CollectionsSection } from './components/CollectionsSection';
 import { Footer } from './components/Footer';
 import { LeadProposalModal } from './components/LeadProposalModal';
 import { AdminConfigModal } from './components/AdminConfigModal';
@@ -237,6 +238,13 @@ export default function App() {
           currentLang={currentLang}
           onCalculateClick={handleOpenCalculator}
           onRequestSurveyClick={() => handleOpenProposalModal('site_survey')}
+        />
+
+        {/* 14. Project Gallery & Official Campaign Collections (At the end of page) */}
+        <CollectionsSection
+          currentLang={currentLang}
+          onRequestSurveyClick={() => handleOpenProposalModal('site_survey')}
+          onSelectSystem={(_title) => handleOpenProposalModal('proposal')}
         />
       </main>
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Language } from '../types';
 import { translations } from '../i18n/translations';
 import { BatteryCharging, Sun, Moon, Zap, ShieldCheck } from 'lucide-react';
+import solarBatteryImg from '../assets/solar-battery-system.jpg';
 
 interface BatterySectionProps {
   currentLang: Language;
@@ -76,32 +77,34 @@ export const BatterySection: React.FC<BatterySectionProps> = ({
 
           {/* Right Column: Battery Hardware Visual */}
           <div className="lg:col-span-6">
-            <div className="relative rounded-3xl overflow-hidden shadow-xl border border-gray-200 bg-gray-900">
+            <div className="relative rounded-3xl overflow-hidden shadow-xl border border-gray-200 bg-gray-900 group">
               <img
-                src="https://images.unsplash.com/photo-1548611716-ad382f2405ee?auto=format&fit=crop&w=1000&q=80"
-                alt="Modern Grade-A LiFePO4 Energy Storage"
-                className="w-full h-[400px] object-cover opacity-85"
-                referrerPolicy="no-referrer"
+                src={solarBatteryImg}
+                alt="Modern Grade-A LiFePO4 Modular Battery Storage Tower & Hybrid Inverter"
+                className="w-full h-[440px] sm:h-[480px] object-cover object-center transition-transform duration-700 group-hover:scale-105"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent pointer-events-none" />
 
               {/* Inset Badge */}
-              <div className="absolute bottom-6 left-6 right-6 bg-white/95 backdrop-blur-md rounded-2xl p-5 border border-white/60">
+              <div className="absolute bottom-5 left-5 right-5 bg-white/95 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/60 shadow-lg">
                 <div className="flex items-center justify-between text-xs font-bold text-gray-900 mb-2">
-                  <span>LiFePO4 Lithium Iron Phosphate</span>
-                  <span className="text-emerald-600 font-mono">6,000+ Cycles</span>
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    LiFePO4 Modular Stacking Battery Tower
+                  </span>
+                  <span className="text-emerald-600 font-mono font-bold">6,000+ Cycles</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center text-xs pt-2 border-t border-gray-100">
                   <div>
-                    <div className="text-[10px] text-gray-500">Switchover</div>
-                    <div className="font-extrabold text-gray-900">&lt; 10ms</div>
+                    <div className="text-[10px] text-gray-500 font-medium">Switchover</div>
+                    <div className="font-extrabold text-gray-900">&lt; 10ms (UPS)</div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-gray-500">Safety</div>
-                    <div className="font-extrabold text-emerald-700">Thermal Stable</div>
+                    <div className="text-[10px] text-gray-500 font-medium">Architecture</div>
+                    <div className="font-extrabold text-emerald-700">Modular Blocks</div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-gray-500">Telemetry</div>
+                    <div className="text-[10px] text-gray-500 font-medium">Telemetry</div>
                     <div className="font-extrabold text-blue-600">Smart App</div>
                   </div>
                 </div>

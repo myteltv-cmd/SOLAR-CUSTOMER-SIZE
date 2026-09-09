@@ -9,7 +9,9 @@ import {
   SolarEngineConfig
 } from '../types';
 import { translations } from '../i18n/translations';
-import { calculateSolarSystem, convertCurrency } from '../utils/calculator';
+import { calculateSolarSystem, convertCurrency, CAMBODIA_PROVINCES } from '../utils/calculator';
+import { detectUserCambodianProvince, CAMBODIA_PROVINCE_COORDINATES } from '../utils/geolocation';
+import { triggerHaptic } from '../utils/haptics';
 import {
   Home,
   Store,
@@ -24,6 +26,7 @@ import {
   Sparkles,
   Zap,
   CheckCircle,
+  CheckCircle2,
   FileUp,
   ShieldCheck,
   PhoneCall,
@@ -37,7 +40,10 @@ import {
   Clock,
   Layers,
   ArrowRight,
-  Printer
+  Printer,
+  MapPin,
+  Navigation,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -70,6 +76,14 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
   const [monthlyKWh, setMonthlyKWh] = useState<number>(2873);
   const [propertyType, setPropertyType] = useState<PropertyType>('shop');
   const [batteryPreference, setBatteryPreference] = useState<BatteryPreference>('no_battery');
+  const [province, setProvince] = useState<string>('Phnom Penh');
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [locationDetection, setLocationDetection] = useState<{
+    status: 'idle' | 'locating' | 'success' | 'error';
+    message?: string;
+    accuracyMeters?: number;
+    isInCambodia?: boolean;
+  }>({ status: 'idle' });
   const [showFormulaDetails, setShowFormulaDetails] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
@@ -92,10 +106,61 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
     currency,
     daytimeUsage: 'mostly_day', // Baseline 100% total consumption coverage
     batteryPreference,
-    targetCoveragePercent: 100
+    targetCoveragePercent: 100,
+    province
   };
 
   const results: SolarCalculationResult = calculateSolarSystem(calculationInputs, config);
+
+  const handleAutoDetectLocation = async () => {
+    triggerHaptic('medium');
+    setIsLocating(true);
+    setLocationDetection({
+      status: 'locating',
+      message: currentLang === 'VI' ? 'Đang định vị GPS...' : currentLang === 'KH' ? 'កំពុងកំណត់ទីតាំង GPS...' : 'Detecting GPS location in Cambodia...'
+    });
+
+    try {
+      const res = await detectUserCambodianProvince();
+      if (res.success && res.province) {
+        setProvince(res.province);
+        setLocationDetection({
+          status: 'success',
+          message: res.isInCambodia
+            ? `${currentLang === 'VI' ? 'Đã định vị:' : currentLang === 'KH' ? 'ទីតាំង:' : 'Detected:'} ${res.province} (±${res.accuracyMeters || 15}m)`
+            : `${currentLang === 'VI' ? 'Tỉnh gần nhất:' : 'Nearest province:'} ${res.province}`,
+          accuracyMeters: res.accuracyMeters,
+          isInCambodia: res.isInCambodia
+        });
+        triggerHaptic('success');
+        if (onUpdateCalculationState) {
+          onUpdateCalculationState({ ...calculationInputs, province: res.province }, results);
+        }
+      } else {
+        setLocationDetection({
+          status: 'error',
+          message: res.message || (currentLang === 'VI' ? 'Không thể truy cập GPS' : 'GPS access denied')
+        });
+        triggerHaptic('error');
+      }
+    } catch {
+      setLocationDetection({
+        status: 'error',
+        message: currentLang === 'VI' ? 'Lỗi định vị' : 'Location error'
+      });
+      triggerHaptic('error');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  const handleProvinceChange = (newProvince: string) => {
+    setProvince(newProvince);
+    triggerHaptic('selection');
+    if (onUpdateCalculationState) {
+      onUpdateCalculationState({ ...calculationInputs, province: newProvince }, results);
+    }
+  };
 
   const handleBillInputChange = (val: number) => {
     setMonthlyBillUSD(Math.max(0, val));
@@ -212,8 +277,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                 {(['USD', 'KHR', 'VND'] as Currency[]).map((curr) => (
                   <button
                     key={curr}
-                    onClick={() => handleCurrencyChange(curr)}
-                    className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+                    onClick={() => {
+                      triggerHaptic('selection');
+                      handleCurrencyChange(curr);
+                    }}
+                    className={`px-2.5 py-1 rounded transition-all duration-150 ease-out active:scale-95 touch-manipulation cursor-pointer select-none ${
                       currency === curr
                         ? 'bg-white text-[#ED1C24] shadow-2xs'
                         : 'text-[#64748B] hover:text-[#0F172A]'
@@ -229,8 +297,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
             <div className="grid grid-cols-2 gap-2 bg-[#F8FAFC] p-1.5 rounded-xl border border-[#E2E8F0] text-xs font-medium">
               <button
                 type="button"
-                onClick={() => setInputMode('bill')}
-                className={`py-2 px-3 rounded-lg text-center font-semibold transition-all cursor-pointer ${
+                onClick={() => {
+                  triggerHaptic('selection');
+                  setInputMode('bill');
+                }}
+                className={`py-2 px-3 rounded-lg text-center font-semibold transition-all duration-150 ease-out active:scale-[0.97] touch-manipulation cursor-pointer select-none ${
                   inputMode === 'bill'
                     ? 'bg-white text-[#ED1C24] shadow-xs border border-[#E2E8F0]'
                     : 'text-[#64748B] hover:text-[#0F172A]'
@@ -240,8 +311,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setInputMode('kwh')}
-                className={`py-2 px-3 rounded-lg text-center font-semibold transition-all cursor-pointer ${
+                onClick={() => {
+                  triggerHaptic('selection');
+                  setInputMode('kwh');
+                }}
+                className={`py-2 px-3 rounded-lg text-center font-semibold transition-all duration-150 ease-out active:scale-[0.97] touch-manipulation cursor-pointer select-none ${
                   inputMode === 'kwh'
                     ? 'bg-white text-[#ED1C24] shadow-xs border border-[#E2E8F0]'
                     : 'text-[#64748B] hover:text-[#0F172A]'
@@ -259,7 +333,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     {currentLang === 'VI' ? 'Hóa đơn tiền điện / tháng' : 'Monthly Electricity Bill'}
                   </label>
                   <span className="text-[11px] font-mono text-[#64748B]">
-                    ≈ {results.monthlyKWhConsumed.toLocaleString()} kWh/tháng (@$0.174/kWh)
+                    ≈ {results.monthlyKWhConsumed.toLocaleString()} kWh/tháng (@$0.182/kWh)
                   </span>
                 </div>
 
@@ -271,7 +345,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     step={10}
                     value={monthlyBillUSD}
                     onChange={(e) => handleBillInputChange(Number(e.target.value))}
-                    className="w-full bg-[#F8FAFC] border-2 border-[#E2E8F0] focus:border-[#ED1C24] focus:bg-white rounded-xl py-3 px-4 text-2xl font-extrabold text-[#0F172A] font-mono focus:outline-none transition-all"
+                    className="w-full bg-[#F8FAFC] border-2 border-[#E2E8F0] focus:border-[#ED1C24] focus:bg-white focus:ring-4 focus:ring-[#ED1C24]/10 rounded-xl py-3 px-4 text-2xl font-extrabold text-[#0F172A] font-mono focus:outline-none transition-all duration-150 ease-out active:scale-[0.99] focus:scale-[1.005] touch-manipulation"
                   />
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-[#64748B] font-mono">
                     {currency === 'KHR' ? 'KHR ៛' : currency === 'VND' ? 'VND ₫' : 'USD $'}
@@ -285,8 +359,10 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                   max={currency === 'KHR' ? 40000000 : currency === 'VND' ? 250000000 : 10000}
                   step={currency === 'KHR' ? 100000 : currency === 'VND' ? 500000 : 50}
                   value={monthlyBillUSD}
-                  onChange={(e) => handleBillInputChange(Number(e.target.value))}
-                  className="w-full h-2 bg-[#E2E8F0] rounded-lg appearance-none cursor-pointer accent-[#ED1C24]"
+                  onChange={(e) => {
+                    handleBillInputChange(Number(e.target.value));
+                  }}
+                  className="w-full h-2 bg-[#E2E8F0] rounded-lg appearance-none cursor-pointer accent-[#ED1C24] transition-all duration-150 touch-manipulation active:scale-y-125"
                 />
 
                 {/* Presets Pills */}
@@ -303,8 +379,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                       <button
                         key={pUSD}
                         type="button"
-                        onClick={() => handleBillInputChange(presetVal)}
-                        className={`text-xs py-1 px-2.5 rounded-lg font-mono font-semibold transition-all cursor-pointer ${
+                        onClick={() => {
+                          triggerHaptic('selection');
+                          handleBillInputChange(presetVal);
+                        }}
+                        className={`text-xs py-1.5 px-3 rounded-lg font-mono font-semibold transition-all duration-150 ease-out active:scale-90 active:shadow-inner touch-manipulation cursor-pointer select-none ${
                           isSelected
                             ? 'bg-[#0F172A] text-white'
                             : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
@@ -339,7 +418,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     step={50}
                     value={monthlyKWh}
                     onChange={(e) => handleKWhInputChange(Number(e.target.value))}
-                    className="w-full bg-[#F8FAFC] border-2 border-[#E2E8F0] focus:border-[#ED1C24] focus:bg-white rounded-xl py-3 px-4 text-2xl font-extrabold text-[#0F172A] font-mono focus:outline-none transition-all"
+                    className="w-full bg-[#F8FAFC] border-2 border-[#E2E8F0] focus:border-[#ED1C24] focus:bg-white focus:ring-4 focus:ring-[#ED1C24]/10 rounded-xl py-3 px-4 text-2xl font-extrabold text-[#0F172A] font-mono focus:outline-none transition-all duration-150 ease-out active:scale-[0.99] focus:scale-[1.005] touch-manipulation"
                   />
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-[#64748B] font-mono">
                     kWh / month
@@ -353,7 +432,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                   step={100}
                   value={monthlyKWh}
                   onChange={(e) => handleKWhInputChange(Number(e.target.value))}
-                  className="w-full h-2 bg-[#E2E8F0] rounded-lg appearance-none cursor-pointer accent-[#ED1C24]"
+                  className="w-full h-2 bg-[#E2E8F0] rounded-lg appearance-none cursor-pointer accent-[#ED1C24] transition-all duration-150 touch-manipulation active:scale-y-125"
                 />
               </div>
             )}
@@ -375,8 +454,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     <button
                       key={prop.id}
                       type="button"
-                      onClick={() => setPropertyType(prop.id as PropertyType)}
-                      className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      onClick={() => {
+                        triggerHaptic('selection');
+                        setPropertyType(prop.id as PropertyType);
+                      }}
+                      className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-semibold transition-all duration-150 ease-out active:scale-95 active:shadow-inner touch-manipulation cursor-pointer select-none ${
                         isSelected
                           ? 'border-[#ED1C24] bg-[#ED1C24]/5 text-[#ED1C24] ring-1 ring-[#ED1C24]'
                           : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B] hover:bg-[#F1F5F9]'
@@ -390,21 +472,102 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
               </div>
             </div>
 
-            {/* System Sizing Mode: 100% On-Grid vs Hybrid Storage */}
+            {/* Cambodia Province & Geolocation Auto-Detection */}
+            <div className="space-y-2 pt-2 border-t border-[#F1F5F9]">
+              <div className="flex items-center justify-between">
+                <label htmlFor="province-select" className="text-xs font-bold text-[#475569] uppercase font-mono flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#ED1C24]" />
+                  <span>
+                    {currentLang === 'VI'
+                      ? 'Tỉnh / Thành Phố (Campuchia)'
+                      : currentLang === 'KH'
+                      ? 'ខេត្ត/រាជធានី (កម្ពុជា)'
+                      : 'Province in Cambodia'}
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleAutoDetectLocation}
+                  disabled={isLocating}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#ED1C24] hover:text-[#C52B1B] bg-[#ED1C24]/10 hover:bg-[#ED1C24]/15 active:scale-95 px-2.5 py-1 rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-50 touch-manipulation select-none"
+                  title="Auto-detect location using GPS"
+                >
+                  {isLocating ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Navigation className="w-3 h-3" />
+                  )}
+                  <span>
+                    {isLocating
+                      ? (currentLang === 'VI' ? 'Đang định vị...' : currentLang === 'KH' ? 'កំពុងស្វែងរក...' : 'Locating...')
+                      : (currentLang === 'VI' ? 'Tự động định vị 📍' : currentLang === 'KH' ? 'កំណត់ទីតាំងស្វ័យប្រវត្តិ 📍' : 'Auto-Detect 📍')}
+                  </span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <select
+                  id="province-select"
+                  value={province}
+                  onChange={(e) => handleProvinceChange(e.target.value)}
+                  className="w-full bg-[#F8FAFC] border-2 border-[#E2E8F0] focus:border-[#ED1C24] focus:bg-white focus:ring-2 focus:ring-[#ED1C24]/10 rounded-xl py-2.5 pl-3.5 pr-10 text-sm font-semibold text-[#0F172A] focus:outline-none transition-all duration-150 ease-out appearance-none cursor-pointer"
+                >
+                  {CAMBODIA_PROVINCES.map((prov) => (
+                    <option key={prov} value={prov}>
+                      {prov}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-[#64748B] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              {/* Geolocation Status / Radiation info */}
+              <div className="flex items-center justify-between text-[11px] font-mono text-[#64748B] pt-0.5">
+                <span className="flex items-center gap-1">
+                  {locationDetection?.status === 'success' ? (
+                    <span className="text-emerald-600 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{locationDetection.message}</span>
+                    </span>
+                  ) : locationDetection?.status === 'error' ? (
+                    <span className="text-amber-600 font-medium">
+                      {locationDetection.message}
+                    </span>
+                  ) : (
+                    <span className="text-[#64748B]">
+                      {currentLang === 'VI'
+                        ? 'Bức xạ: 4.5 – 4.8h nắng/ngày'
+                        : currentLang === 'KH'
+                        ? 'ពន្លឺថ្ងៃ ៤.៥ - ៤.៨ ម៉ោង/ថ្ងៃ'
+                        : 'Irradiance: 4.5 – 4.8 peak sun h/day'}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[#ED1C24] font-semibold">
+                  Metfone Solar 25 Provinces
+                </span>
+              </div>
+            </div>
+
+            {/* System Sizing Mode: On-Grid (50%-70% Daytime) vs Hybrid Storage (100% Day+Night) */}
             <div className="space-y-2 pt-2 border-t border-[#F1F5F9]">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[#475569] uppercase font-mono block">
                   {currentLang === 'VI' ? 'Cấu hình hệ thống' : 'System Configuration'}
                 </label>
-                <span className="text-[10px] text-[#16A34A] font-bold font-mono">
-                  100% POWER OFFSET
+                <span className={`text-[10px] font-bold font-mono ${batteryPreference === 'battery_backup' ? 'text-[#16A34A]' : 'text-[#ED1C24]'}`}>
+                  {batteryPreference === 'battery_backup' ? '100% POWER OFFSET (NGÀY & ĐÊM)' : '50% – 70% TẢI BAN NGÀY'}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setBatteryPreference('no_battery')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  onClick={() => {
+                    triggerHaptic('selection');
+                    setBatteryPreference('no_battery');
+                  }}
+                  className={`p-3 rounded-xl border text-left transition-all duration-150 ease-out active:scale-[0.97] active:shadow-inner touch-manipulation cursor-pointer select-none ${
                     batteryPreference === 'no_battery'
                       ? 'border-[#0F172A] bg-[#0F172A] text-white shadow-xs'
                       : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]'
@@ -415,14 +578,17 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     <span>Hòa Lưới (On-Grid)</span>
                   </div>
                   <span className={`text-[10px] block mt-1 ${batteryPreference === 'no_battery' ? 'text-white/70' : 'text-[#64748B]'}`}>
-                    {currentLang === 'VI' ? 'Tối ưu hoàn vốn (2.4 - 3.5 năm)' : 'Max ROI, Lowest CAPEX'}
+                    {currentLang === 'VI' ? '50% – 70% tải ngày • Hoàn vốn 3 – 5 năm' : '50% - 70% Day Load • 3 – 5 Yrs Payback'}
                   </span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setBatteryPreference('battery_backup')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  onClick={() => {
+                    triggerHaptic('selection');
+                    setBatteryPreference('battery_backup');
+                  }}
+                  className={`p-3 rounded-xl border text-left transition-all duration-150 ease-out active:scale-[0.97] active:shadow-inner touch-manipulation cursor-pointer select-none ${
                     batteryPreference === 'battery_backup'
                       ? 'border-[#0F172A] bg-[#0F172A] text-white shadow-xs'
                       : 'border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]'
@@ -433,7 +599,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     <span>Lưu Trữ (Hybrid)</span>
                   </div>
                   <span className={`text-[10px] block mt-1 ${batteryPreference === 'battery_backup' ? 'text-white/70' : 'text-[#64748B]'}`}>
-                    {currentLang === 'VI' ? 'Pin LiFePO4 + Không lo mất điện' : 'Backup Power + Night Supply'}
+                    {currentLang === 'VI' ? 'Tiết kiệm 100% (Pin LiFePO4 cấp tải đêm)' : '100% Offset (LiFePO4 Night Power)'}
                   </span>
                 </button>
               </div>
@@ -442,8 +608,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
             {/* Quick Bill OCR Button */}
             <button
               type="button"
-              onClick={onNavigateToBillUpload}
-              className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#475569] transition-all cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                onNavigateToBillUpload();
+              }}
+              className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] active:bg-[#E2E8F0] active:scale-[0.98] text-xs font-semibold text-[#475569] transition-all duration-150 ease-out cursor-pointer touch-manipulation select-none"
             >
               <FileUp className="w-4 h-4 text-[#ED1C24]" />
               <span>
@@ -466,8 +635,8 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                 {/* Header Badge & Title */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-4">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#ED1C24] text-white text-[10px] font-bold uppercase font-mono tracking-wider">
-                      100% ENERGY MATCH
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-white text-[10px] font-bold uppercase font-mono tracking-wider ${batteryPreference === 'battery_backup' ? 'bg-[#16A34A]' : 'bg-[#ED1C24]'}`}>
+                      {batteryPreference === 'battery_backup' ? '100% HYBRID ENERGY MATCH' : '50% – 70% DAYTIME MATCH'}
                     </span>
                     <span className="text-xs text-white/60 font-mono">
                       Tier-1 TOPCon 620W Architecture
@@ -475,7 +644,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                   </div>
                   <div className="text-xs text-emerald-400 font-mono font-bold flex items-center gap-1">
                     <CheckCircle className="w-3.5 h-3.5" />
-                    <span>{currentLang === 'VI' ? 'Thuật toán chuẩn xác 100%' : '100% Precision Model'}</span>
+                    <span>
+                      {batteryPreference === 'battery_backup'
+                        ? (currentLang === 'VI' ? 'Tiết kiệm 100% Ngày & Đêm' : '100% Day & Night Coverage')
+                        : (currentLang === 'VI' ? 'Tiết kiệm 50% – 70% tải ngày' : '50% - 70% Daytime Coverage')}
+                    </span>
                   </div>
                 </div>
 
@@ -500,10 +673,12 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     </div>
                   </div>
 
-                  {/* 100% Monthly Bill Savings */}
+                  {/* Monthly Bill Savings */}
                   <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4.5 space-y-1">
                     <span className="text-[11px] font-bold text-emerald-400 uppercase font-mono block">
-                      {currentLang === 'VI' ? 'Tiết Kiệm 100% Tiền Điện' : '100% Bill Offset (Savings)'}
+                      {batteryPreference === 'battery_backup'
+                        ? (currentLang === 'VI' ? 'Tiết Kiệm 100% Tiền Điện' : '100% Bill Offset (Day + Night)')
+                        : (currentLang === 'VI' ? 'Tiết Kiệm 50% – 70% Tiền Điện' : '50% – 70% Daytime Bill Offset')}
                     </span>
                     <div className="flex items-baseline gap-2">
                       <span className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-300 tracking-tight">
@@ -513,33 +688,38 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                     </div>
                     <div className="text-xs text-emerald-200/80 font-mono pt-1">
                       ≈ <strong>{formattedAnnualSavings.formatted}</strong> / {currentLang === 'VI' ? 'năm' : 'year'}
+                      {batteryPreference !== 'battery_backup' && (
+                        <span className="block text-[11px] text-white/60 font-normal mt-0.5">
+                          (còn ~{results.nighttimeLoadPercent || 40}% phụ tải ban đêm trả EDC)
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Secondary Financial & Technical Specs Grid */}
+                {/* Secondary Financial & Technical Specs Grid - NO INVESTMENT COST SHOWN */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs border-t border-white/10 pt-5">
                   <div className="space-y-1">
                     <span className="text-white/50 block font-mono text-[10px] uppercase">
-                      {currentLang === 'VI' ? 'Chi phí đầu tư trọn gói' : 'Turnkey Investment'}
+                      {currentLang === 'VI' ? 'Tỷ lệ giảm tiền điện' : 'Bill Reduction'}
                     </span>
                     <span className="font-extrabold text-white text-base font-mono">
-                      {formattedTurnkeyCost.formatted}
+                      {batteryPreference === 'battery_backup' ? '100%' : '50% – 70%'}
                     </span>
                     <span className="text-[10px] text-white/40 block font-mono">
-                      @$690/kWp turnkey
+                      {batteryPreference === 'battery_backup' ? 'Toàn bộ ngày & đêm' : 'Tối ưu tải ban ngày'}
                     </span>
                   </div>
 
                   <div className="space-y-1">
                     <span className="text-white/50 block font-mono text-[10px] uppercase">
-                      {currentLang === 'VI' ? 'Thời gian hoàn vốn' : 'Simple Payback'}
+                      {currentLang === 'VI' ? 'Thời gian hoàn vốn' : 'Payback Period'}
                     </span>
                     <span className="font-extrabold text-emerald-400 text-base font-mono">
-                      ≈ {results.estimatedPaybackYears} {currentLang === 'VI' ? 'Năm' : 'Years'}
+                      3 – 5 {currentLang === 'VI' ? 'Năm' : 'Years'}
                     </span>
                     <span className="text-[10px] text-white/40 block font-mono">
-                      ROI 25y: +{results.roi25YearsPercent}%
+                      {currentLang === 'VI' ? 'Dao động từ 3-5 năm' : '3 to 5 Years'}
                     </span>
                   </div>
 
@@ -563,7 +743,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                       ≈ {results.requiredRoofAreaSqM} <span className="text-xs font-normal">m²</span>
                     </span>
                     <span className="text-[10px] text-white/40 block font-mono">
-                      {results.co2ReductionTonsPerYear} Tấn CO₂/năm
+                      {results.estimatedPanelsCount} tấm TOPCon 620W
                     </span>
                   </div>
                 </div>
@@ -578,7 +758,7 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                       </span>
                     </div>
                     <span className="font-mono text-[11px] text-emerald-400 font-bold">
-                      +${results.batteryCapexUSD.toLocaleString()}
+                      Cung cấp 100% điện ban đêm
                     </span>
                   </div>
                 )}
@@ -588,10 +768,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      triggerHaptic('medium');
                       handleCelebrate();
                       onOpenProposalModal('proposal', results, calculationInputs);
                     }}
-                    className="flex-1 bg-[#ED1C24] hover:bg-[#D01820] text-white font-bold py-3.5 px-5 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                    className="flex-1 bg-[#ED1C24] hover:bg-[#D01820] active:bg-[#B8151B] text-white font-bold py-3.5 px-5 rounded-xl shadow-lg hover:shadow-xl active:shadow-xs transition-all duration-150 ease-out active:scale-[0.96] active:translate-y-0.5 flex items-center justify-center gap-2 text-sm cursor-pointer touch-manipulation select-none"
                   >
                     <Send className="w-4 h-4" />
                     <span>
@@ -603,8 +784,11 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => onOpenProposalModal('site_survey', results, calculationInputs)}
-                    className="bg-white/10 hover:bg-white/20 text-white font-semibold py-3.5 px-5 rounded-xl border border-white/20 transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onOpenProposalModal('site_survey', results, calculationInputs);
+                    }}
+                    className="bg-white/10 hover:bg-white/20 active:bg-white/30 text-white font-semibold py-3.5 px-5 rounded-xl border border-white/20 transition-all duration-150 ease-out active:scale-[0.96] active:translate-y-0.5 flex items-center justify-center gap-2 text-sm cursor-pointer touch-manipulation select-none"
                   >
                     <PhoneCall className="w-4 h-4" />
                     <span>
@@ -622,12 +806,14 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                   <Layers className="w-4 h-4 text-[#ED1C24]" />
                   <span>
                     {currentLang === 'VI'
-                      ? 'So Sánh Hóa Đơn Điện: Trước và Sau Khi Lắp Solar 100%'
+                      ? (batteryPreference === 'battery_backup'
+                          ? 'So Sánh Hóa Đơn Điện: Trước và Sau Khi Lắp Hybrid (Lưu Trữ 100%)'
+                          : 'So Sánh Hóa Đơn Điện: Trước và Sau Khi Lắp Hòa Lưới (50% – 70% Tải Ngày)')
                       : 'Before vs. After Solar Financial Comparison'}
                   </span>
                 </h4>
-                <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  TIẾT KIỆM 100%
+                <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${batteryPreference === 'battery_backup' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-amber-600 bg-amber-50 border-amber-200'}`}>
+                  {batteryPreference === 'battery_backup' ? 'TIẾT KIỆM 100%' : 'TIẾT KIỆM 50% – 70%'}
                 </span>
               </div>
 
@@ -648,44 +834,51 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                 {/* After */}
                 <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-1">
                   <span className="text-[10px] font-bold text-emerald-700 uppercase font-mono block">
-                    {currentLang === 'VI' ? 'Sau Khi Lắp Solar (100%)' : 'Bill After Solar'}
+                    {currentLang === 'VI' ? 'Sau Khi Lắp Solar' : 'Bill After Solar'}
                   </span>
                   <div className="text-2xl font-extrabold text-emerald-600 font-mono">
-                    $0 / 0 ៛
+                    {batteryPreference === 'battery_backup'
+                      ? '$0 / 0 ៛'
+                      : `${convertCurrency(results.estimatedMonthlyBillAfterSolarUSD, currency).formatted}`}
                   </div>
                   <span className="text-[11px] text-emerald-600/80 block">
-                    {results.estimatedMonthlyGenerationKWh.toLocaleString()} kWh tự sản xuất
+                    {batteryPreference === 'battery_backup'
+                      ? `${results.estimatedMonthlyGenerationKWh.toLocaleString()} kWh tự sản xuất 100%`
+                      : `Còn ~${results.nighttimeLoadPercent || 40}% tải ban đêm thanh toán EDC`}
                   </span>
                 </div>
 
-                {/* 25-Year Cumulative Profit */}
+                {/* Annual Savings */}
                 <div className="p-4 rounded-xl bg-slate-900 text-white space-y-1">
                   <span className="text-[10px] font-bold text-amber-400 uppercase font-mono block">
-                    {currentLang === 'VI' ? 'Lợi Nhuận Ròng 25 Năm' : '25-Year Cumulative Net Profit'}
+                    {currentLang === 'VI' ? 'Tiết Kiệm Hàng Năm' : 'Annual Savings'}
                   </span>
                   <div className="text-2xl font-extrabold text-white font-mono">
-                    +{formatted25YrProfit.formatted}
+                    {formattedAnnualSavings.formatted}
                   </div>
-                  <span className="text-[11px] text-white/60 block">
-                    Đã trừ chi phí đầu tư & O&M
+                  <span className="text-[11px] text-emerald-400 block font-mono">
+                    Thời gian hoàn vốn: 3 – 5 năm
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Transparent 100% Mathematical Sizing Breakdown Accordion */}
+            {/* Transparent Mathematical Sizing Breakdown Accordion */}
             <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-xs">
               <button
                 type="button"
-                onClick={() => setShowFormulaDetails(!showFormulaDetails)}
-                className="w-full p-4.5 flex items-center justify-between bg-[#F8FAFC] hover:bg-[#F1F5F9] transition-all cursor-pointer text-left"
+                onClick={() => {
+                  triggerHaptic('selection');
+                  setShowFormulaDetails(!showFormulaDetails);
+                }}
+                className="w-full p-4.5 flex items-center justify-between bg-[#F8FAFC] hover:bg-[#F1F5F9] active:bg-[#E2E8F0]/70 transition-all duration-150 ease-out active:scale-[0.99] cursor-pointer text-left touch-manipulation select-none"
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#ED1C24]" />
                   <span className="text-xs font-bold text-[#0F172A] uppercase font-mono">
                     {currentLang === 'VI'
-                      ? '📐 Xem Chi Tiết Công Thức & Thuật Toán Tính Toán 100% Chuẩn Xác'
-                      : '📐 View Transparent 100% Engineering Formulas & Math Proof'}
+                      ? '📐 Xem Chi Tiết Công Thức & Thuật Toán Tính Toán Chuẩn Xác'
+                      : '📐 View Transparent Engineering Formulas & Mathematical Proof'}
                   </span>
                 </div>
                 {showFormulaDetails ? (
@@ -699,10 +892,10 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                 <div className="p-5 border-t border-[#E2E8F0] space-y-4 text-xs font-mono text-[#334155] bg-white">
                   <div className="space-y-2">
                     <div className="font-bold text-[#0F172A] border-b border-slate-100 pb-1">
-                      1. Tính toán lượng điện tiêu thụ thực tế (100% baseline):
+                      1. Tính toán lượng điện tiêu thụ thực tế (Giá điện EDC $0.182/kWh):
                     </div>
                     <p className="text-[#475569]">
-                      • Sản lượng điện tiêu thụ tháng: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#ED1C24] font-bold">E_tháng = ${results.monthlyBillBeforeSolarUSD} / $0.174 = {results.monthlyKWhConsumed} kWh/tháng</code>
+                      • Sản lượng điện tiêu thụ tháng: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#ED1C24] font-bold">E_tháng = ${results.monthlyBillBeforeSolarUSD} / $0.182 = {results.monthlyKWhConsumed} kWh/tháng</code>
                     </p>
                     <p className="text-[#475569]">
                       • Sản lượng điện tiêu thụ ngày: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">E_ngày = {results.monthlyKWhConsumed} / 30 = {results.dailyKWhConsumed} kWh/ngày</code>
@@ -711,22 +904,25 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
 
                   <div className="space-y-2">
                     <div className="font-bold text-[#0F172A] border-b border-slate-100 pb-1">
-                      2. Định cỡ công suất hệ thống theo 4.5 giờ nắng đỉnh/ngày:
+                      2. Định cỡ công suất hệ thống theo 4.5 giờ nắng đỉnh & phân bổ tải:
                     </div>
                     <p className="text-[#475569]">
-                      • Công suất kWp cần thiết: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#ED1C24] font-bold">P_target = {results.dailyKWhConsumed} / 4.5h = {(results.dailyKWhConsumed / 4.5).toFixed(2)} kWp</code>
+                      • Phân bổ phụ tải: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">Ban ngày: {results.daytimeLoadPercent}% | Ban đêm: {results.nighttimeLoadPercent}%</code>
                     </p>
                     <p className="text-[#475569]">
-                      • Số tấm pin N-type TOPCon 620W: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">N_tấm = ceil({(results.dailyKWhConsumed / 4.5).toFixed(2)} × 1000 / 620) = {results.estimatedPanelsCount} tấm</code>
+                      • Công suất kWp đề xuất: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#ED1C24] font-bold">P_target = {results.estimatedKWp} kWp ({batteryPreference === 'battery_backup' ? '100% ngày & đêm' : '50% - 70% tải ngày'})</code>
                     </p>
                     <p className="text-[#475569]">
-                      • Công suất lắp đặt thực tế: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-600 font-bold">P_thực_tế = {results.estimatedPanelsCount} × 0.620 kWp = {results.actualInstalledKWp} kWp</code>
+                      • Số tấm pin N-type TOPCon 620W: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">N_tấm = {results.estimatedPanelsCount} tấm (620W/tấm)</code>
+                    </p>
+                    <p className="text-[#475569]">
+                      • Công suất lắp đặt thực tế: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-600 font-bold">P_thực_tế = {results.actualInstalledKWp} kWp</code>
                     </p>
                   </div>
 
                   <div className="space-y-2">
                     <div className="font-bold text-[#0F172A] border-b border-slate-100 pb-1">
-                      3. Sản lượng phát điện & Giá trị kinh tế (100% Offset):
+                      3. Sản lượng phát điện & Hiệu quả kinh tế:
                     </div>
                     <p className="text-[#475569]">
                       • Sản lượng ngày: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">{results.actualInstalledKWp} kWp × 4.5h = {results.estimatedDailyGenerationKWh} kWh/ngày</code>
@@ -735,10 +931,10 @@ export const SolarCalculator: React.FC<SolarCalculatorProps> = ({
                       • Sản lượng tháng: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">{results.estimatedDailyGenerationKWh} × 30 = {results.estimatedMonthlyGenerationKWh} kWh/tháng</code>
                     </p>
                     <p className="text-[#475569]">
-                      • Tiền điện tiết kiệm tháng: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-600 font-bold">{results.monthlyKWhConsumed} kWh × $0.174 = ${results.estimatedMonthlySavingsUSD}/tháng</code>
+                      • Tiền điện tiết kiệm tháng: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-600 font-bold">${results.estimatedMonthlySavingsUSD} / tháng</code>
                     </p>
                     <p className="text-[#475569]">
-                      • Thời gian hoàn vốn: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0F172A]">${results.estimatedSystemCostUSD} / ${results.estimatedAnnualSavingsUSD} = {results.estimatedPaybackYears} năm</code>
+                      • Thời gian hoàn vốn dự kiến: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-emerald-600 font-bold">Dao động từ 3 – 5 năm</code>
                     </p>
                   </div>
                 </div>

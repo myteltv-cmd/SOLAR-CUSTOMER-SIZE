@@ -37,6 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
     { label: t.nav.calculator, href: '#calculator' },
     { label: t.nav.howItWorks, href: '#how-it-works' },
     { label: t.nav.whyMetfone, href: '#why-metfone' },
+    { label: currentLang === 'VI' ? 'Bộ Sưu Tập' : currentLang === 'KH' ? 'កម្រងរូបភាព' : 'Collections', href: '#collections' },
     { label: t.nav.faq, href: '#faq' }
   ];
 

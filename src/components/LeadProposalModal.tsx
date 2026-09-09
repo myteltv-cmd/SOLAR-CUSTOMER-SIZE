@@ -1,4 +1,4 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import {
   Language,
   SolarCalculationResult,
@@ -8,6 +8,8 @@ import {
 } from '../types';
 import { translations } from '../i18n/translations';
 import { CAMBODIA_PROVINCES, calculateLeadScore } from '../utils/calculator';
+import { detectUserCambodianProvince } from '../utils/geolocation';
+import { triggerHaptic } from '../utils/haptics';
 import {
   X,
   Sparkles,
@@ -22,7 +24,9 @@ import {
   User,
   Mail,
   Copy,
-  Check
+  Check,
+  Navigation,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -58,12 +62,47 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
   const [phone, setPhone] = useState('');
   const [preferredChannel, setPreferredChannel] = useState<'telegram' | 'whatsapp' | 'phone' | 'messenger'>('telegram');
   const [email, setEmail] = useState('');
-  const [province, setProvince] = useState('Phnom Penh');
+  const [province, setProvince] = useState(inputs?.province || 'Phnom Penh');
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationFeedback, setLocationFeedback] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedLead, setSubmittedLead] = useState<LeadSubmission | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Sync province whenever inputs change
+  useEffect(() => {
+    if (inputs?.province) {
+      setProvince(inputs.province);
+    }
+  }, [inputs?.province]);
+
+  const handleDetectLocationModal = async () => {
+    triggerHaptic('medium');
+    setIsLocating(true);
+    setLocationFeedback(null);
+    try {
+      const res = await detectUserCambodianProvince();
+      if (res.success && res.province) {
+        setProvince(res.province);
+        setLocationFeedback(
+          res.isInCambodia
+            ? `Detected: ${res.province} (±${res.accuracyMeters || 15}m)`
+            : `Nearest: ${res.province}`
+        );
+        triggerHaptic('success');
+      } else {
+        setLocationFeedback(res.message || 'GPS unavailable');
+        triggerHaptic('error');
+      }
+    } catch {
+      setLocationFeedback('Could not access GPS');
+      triggerHaptic('error');
+    } finally {
+      setIsLocating(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -146,8 +185,12 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
       <div className="bg-[#F7F5F2] rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-[#1A1A1A]/15 relative animate-in zoom-in-95 duration-200">
         {/* Close Button */}
         <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full text-[#1A1A1A]/50 hover:text-[#1A1A1A] bg-[#EFECE6] hover:bg-[#E2DDD5] transition-colors z-10 cursor-pointer"
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            onClose();
+          }}
+          className="absolute top-5 right-5 p-2 rounded-full text-[#1A1A1A]/50 hover:text-[#1A1A1A] bg-[#EFECE6] hover:bg-[#E2DDD5] active:bg-[#DCD8D0] active:scale-90 transition-all duration-150 ease-out z-10 cursor-pointer touch-manipulation"
           aria-label="Close modal"
         >
           <X className="w-5 h-5" />
@@ -238,7 +281,7 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                     Savings: <strong className="text-[#1E7B58] font-mono">~${calculatedData.estimatedMonthlySavingsUSD}/mo</strong>
                   </div>
                   <div>
-                    Payback: <strong className="text-[#C27803] font-mono">~{calculatedData.estimatedPaybackYears} yrs</strong>
+                    Payback: <strong className="text-[#C27803] font-mono">{calculatedData.paybackYearsDisplay || '3 – 5 yrs'}</strong>
                   </div>
                   <div>
                     Bill: <strong className="text-[#1A1A1A] font-mono">${inputs?.monthlyBillUSD || 500}/mo</strong>
@@ -282,7 +325,7 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                     placeholder={t.proposalModal.fullNamePlaceholder}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-1 focus:ring-[#E03E2D]/20 focus:outline-none transition-all shadow-2xs"
+                    className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-2 focus:ring-[#E03E2D]/20 focus:outline-none transition-all duration-150 ease-out focus:scale-[1.005] active:scale-[0.99] touch-manipulation shadow-2xs"
                   />
                 </div>
               </div>
@@ -304,7 +347,7 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                     placeholder={t.proposalModal.phonePlaceholder}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-1 focus:ring-[#E03E2D]/20 focus:outline-none font-mono transition-all shadow-2xs"
+                    className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-2 focus:ring-[#E03E2D]/20 focus:outline-none font-mono transition-all duration-150 ease-out focus:scale-[1.005] active:scale-[0.99] touch-manipulation shadow-2xs"
                   />
                 </div>
               </div>
@@ -324,8 +367,11 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                     <button
                       key={ch.id}
                       type="button"
-                      onClick={() => setPreferredChannel(ch.id as any)}
-                      className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      onClick={() => {
+                        triggerHaptic('selection');
+                        setPreferredChannel(ch.id as any);
+                      }}
+                      className={`py-2 px-1 text-center rounded-xl text-xs font-bold border transition-all duration-150 ease-out active:scale-95 touch-manipulation cursor-pointer select-none ${
                         preferredChannel === ch.id
                           ? 'border-[#E03E2D] bg-[#EFECE6] text-[#E03E2D]'
                           : 'border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/70 hover:border-[#1A1A1A]/30'
@@ -340,19 +386,38 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
               {/* Province & Email Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label
-                    htmlFor={provinceId}
-                    className="block text-[10px] font-bold uppercase tracking-wider text-[#1A1A1A]/70 font-mono mb-1"
-                  >
-                    {t.proposalModal.province}
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      htmlFor={provinceId}
+                      className="block text-[10px] font-bold uppercase tracking-wider text-[#1A1A1A]/70 font-mono"
+                    >
+                      {t.proposalModal.province}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleDetectLocationModal}
+                      disabled={isLocating}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#E03E2D] hover:text-[#B82B1B] active:scale-95 transition-all cursor-pointer disabled:opacity-50 touch-manipulation"
+                    >
+                      {isLocating ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Navigation className="w-3 h-3" />
+                      )}
+                      <span>
+                        {isLocating
+                          ? (currentLang === 'VI' ? 'Đang dò GPS...' : 'Locating...')
+                          : (currentLang === 'VI' ? 'Tự động định vị 📍' : currentLang === 'KH' ? 'ស្វែងរកទីតាំង 📍' : 'Auto-Detect 📍')}
+                      </span>
+                    </button>
+                  </div>
                   <div className="relative">
                     <MapPin className="w-4 h-4 text-[#1A1A1A]/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <select
                       id={provinceId}
                       value={province}
                       onChange={(e) => setProvince(e.target.value)}
-                      className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-xs sm:text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-1 focus:ring-[#E03E2D]/20 focus:outline-none appearance-none shadow-2xs"
+                      className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-xs sm:text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-2 focus:ring-[#E03E2D]/20 focus:outline-none appearance-none shadow-2xs transition-all duration-150 ease-out focus:scale-[1.005] touch-manipulation cursor-pointer"
                     >
                       {CAMBODIA_PROVINCES.map((prov) => (
                         <option key={prov} value={prov}>
@@ -361,6 +426,11 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                       ))}
                     </select>
                   </div>
+                  {locationFeedback && (
+                    <span className="text-[10px] font-mono text-emerald-600 block mt-1 font-semibold">
+                      ✓ {locationFeedback}
+                    </span>
+                  )}
                 </div>
 
                 <div>
@@ -378,7 +448,7 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                       placeholder={t.proposalModal.emailPlaceholder}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-xs sm:text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-1 focus:ring-[#E03E2D]/20 focus:outline-none shadow-2xs"
+                      className="w-full bg-white pl-10 pr-4 py-2.5 rounded-xl border border-[#1A1A1A]/15 text-xs sm:text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-2 focus:ring-[#E03E2D]/20 focus:outline-none shadow-2xs transition-all duration-150 ease-out focus:scale-[1.005] active:scale-[0.99] touch-manipulation"
                     />
                   </div>
                 </div>
@@ -398,7 +468,7 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                   placeholder={t.proposalModal.notesPlaceholder}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full bg-white p-3 rounded-xl border border-[#1A1A1A]/15 text-xs sm:text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-1 focus:ring-[#E03E2D]/20 focus:outline-none resize-none shadow-2xs"
+                  className="w-full bg-white p-3 rounded-xl border border-[#1A1A1A]/15 text-xs sm:text-sm text-[#1A1A1A] focus:border-[#E03E2D] focus:ring-2 focus:ring-[#E03E2D]/20 focus:outline-none resize-none shadow-2xs transition-all duration-150 ease-out focus:scale-[1.005] active:scale-[0.99] touch-manipulation"
                 />
               </div>
 
@@ -407,7 +477,8 @@ export const LeadProposalModal: React.FC<LeadProposalModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-3.5 px-6 rounded-xl bg-[#E03E2D] hover:bg-[#C92F20] active:scale-[0.98] text-white font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
+                  onClick={() => triggerHaptic('medium')}
+                  className="w-full py-3.5 px-6 rounded-xl bg-[#E03E2D] hover:bg-[#C92F20] active:bg-[#B8151B] text-white font-bold text-sm shadow-xs active:shadow-none transition-all duration-150 ease-out active:scale-95 active:translate-y-0.5 flex items-center justify-center gap-2 cursor-pointer touch-manipulation select-none disabled:opacity-70"
                 >
                   {isSubmitting ? (
                     <span>{t.proposalModal.submitting}</span>
