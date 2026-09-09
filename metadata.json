@@ -1,0 +1,8 @@
+{
+  "name": "Metfone Solar — Smart Energy & Savings Advisor",
+  "description": "Modern commercial sales landing page, instant solar savings calculator, bill analyzer, and lead qualification platform for Metfone Solar Cambodia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
